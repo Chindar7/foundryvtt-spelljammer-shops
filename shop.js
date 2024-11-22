@@ -103,6 +103,7 @@ Hooks.on('canvasInit', () => {
 });
 
 Hooks.on('getSceneControlButtons', (controls) => {
+    console.log("Shop module hook running", controls);
     controls.find(c => c.name === "tokens")?.tools.push({
         name: "linkShop",
         title: "Configure Shop",
