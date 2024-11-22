@@ -13,7 +13,7 @@
         }
     ],
     "scripts": [
-        "scripts/shop.js"
+        "shop.js"
     ],
     "styles": [
         "styles/shop.css"
