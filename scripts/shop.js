@@ -1,5 +1,5 @@
 Hooks.once('init', () => {
-    game.settings.register('spelljammer-shop', 'shopScenes', {
+    game.settings.register('spelljammer-shops', 'shopScenes', {
         name: 'Shop Scene Mappings',
         scope: 'world',
         config: false,
@@ -8,7 +8,7 @@ Hooks.once('init', () => {
     });
 });
 
-class SpelljammerShopLayer extends CanvasLayer {
+class ShopLayer extends CanvasLayer {
     constructor() {
         super();
         this.shopIcons = new PIXI.Container();
@@ -17,18 +17,21 @@ class SpelljammerShopLayer extends CanvasLayer {
 
     async draw() {
         this.shopIcons.removeChildren();
+        const shopScenes = game.settings.get('spelljammer-shops', 'shopScenes');
+        
         const shops = canvas.tokens.placeables.filter(token => 
-            token.document.getFlag('spelljammer-shop', 'isShop'));
+            token.document.getFlag('spelljammer-shops', 'isShop'));
         
         for (let shop of shops) {
             const icon = await this._createShopIcon(shop);
             this.shopIcons.addChild(icon);
         }
+        
         return this;
     }
 
     async _createShopIcon(shop) {
-        const sprite = new PIXI.Sprite.from('modules/spelljammer-shop/icons/shop.png');
+        const sprite = new PIXI.Sprite.from('modules/spelljammer-shops/icons/shop.png');
         sprite.position.set(shop.x, shop.y);
         sprite.width = shop.width;
         sprite.height = shop.height;
@@ -36,88 +39,72 @@ class SpelljammerShopLayer extends CanvasLayer {
         sprite.buttonMode = true;
         
         sprite.on('click', async () => {
-            const shopData = shop.document.getFlag('spelljammer-shop', 'shopData');
-            if (!shopData) return;
-
-            new Dialog({
-                title: shop.name,
-                content: this._getShopContentHTML(shopData),
-                buttons: {
-                    items: {
-                        label: "General Items",
-                        callback: () => this._showInventory(shopData, 'general')
-                    },
-                    services: {
-                        label: "Services",
-                        callback: () => this._showServices(shopData)
+            const linkedSceneId = shop.document.getFlag('spelljammer-shops', 'linkedScene');
+            if (linkedSceneId) {
+                const scene = game.scenes.get(linkedSceneId);
+                if (scene) {
+                    await game.settings.set('spelljammer-shops', 'lastTownScene', canvas.scene.id);
+                    
+                    await game.settings.set('spelljammer-shops', 'lastShopEntrance', 
+                        shop.document.getFlag('spelljammer-shops', 'entrancePosition'));
+                    
+                    await scene.view();
+                    
+                    const entrancePos = shop.document.getFlag('spelljammer-shops', 'entrancePosition');
+                    if (entrancePos) {
+                        await this._teleportPlayersToEntrance(entrancePos);
+                    }
+                    
+                    const merchantPos = shop.document.getFlag('spelljammer-shops', 'merchantPosition');
+                    if (merchantPos) {
+                        await this._spawnMerchantToken(scene, merchantPos, shop);
                     }
                 }
-            }).render(true);
+            }
         });
         
         return sprite;
     }
 
-    _getShopContentHTML(shopData) {
-        return `
-            <div class="shop-info">
-                <div>Type: ${shopData.type || 'General Store'}</div>
-                <div>Location: ${shopData.location || 'Unknown'}</div>
-                <div>Currency: ${this._formatCurrency(shopData.currency)}</div>
-                <div>Services: ${shopData.services?.map(s => s.name).join(', ') || 'None'}</div>
-            </div>
-        `;
+    async _teleportPlayersToEntrance(entrancePos) {
+        for (let token of canvas.tokens.controlled) {
+            await token.document.update({
+                x: entrancePos.x,
+                y: entrancePos.y
+            });
+        }
     }
 
-    async _showServices(shopData) {
-        const services = shopData.services || [];
-        new Dialog({
-            title: "Available Services",
-            content: `
-                <div class="services-list">
-                    <table>
-                        <tr>
-                            <th>Service</th>
-                            <th>Cost</th>
-                            <th>Description</th>
-                            <th>Actions</th>
-                        </tr>
-                        ${services.map(service => `
-                            <tr>
-                                <td>${service.name}</td>
-                                <td>${this._formatCurrency({gp: service.cost})}</td>
-                                <td>${service.description || ''}</td>
-                                <td>
-                                    <button class="purchase-service" data-service="${service.type}">
-                                        Purchase
-                                    </button>
-                                </td>
-                            </tr>
-                        `).join('')}
-                    </table>
-                </div>
-            `,
-            buttons: { close: { label: "Close" } }
-        }).render(true);
-    }
-
-    _formatCurrency(currency) {
-        if (!currency) return '0 gp';
-        return Object.entries(currency)
-            .filter(([_, amount]) => amount > 0)
-            .map(([type, amount]) => `${amount} ${type}`)
-            .join(', ');
+    async _spawnMerchantToken(scene, position, shopToken) {
+        const existingMerchant = scene.tokens.find(t => 
+            t.getFlag('spelljammer-shops', 'isMerchant'));
+        
+        if (!existingMerchant) {
+            const merchantData = shopToken.document.getFlag('spelljammer-shops', 'merchantData');
+            if (merchantData) {
+                await scene.createEmbeddedDocuments('Token', [{
+                    ...merchantData,
+                    x: position.x,
+                    y: position.y,
+                    flags: {
+                        'spelljammer-shops': {
+                            isMerchant: true
+                        }
+                    }
+                }]);
+            }
+        }
     }
 }
 
 Hooks.on('canvasInit', () => {
     const canvas = game.canvas;
-    canvas.spelljammerShop = canvas.addLayer(new SpelljammerShopLayer());
+    canvas.shops = canvas.addLayer(new ShopLayer());
 });
 
 Hooks.on('getSceneControlButtons', (controls) => {
     controls.find(c => c.name === "tokens")?.tools.push({
-        name: "configureSpelljammerShop",
+        name: "linkShop",
         title: "Configure Shop",
         icon: "fas fa-store",
         visible: game.user.isGM,
@@ -127,208 +114,99 @@ Hooks.on('getSceneControlButtons', (controls) => {
                 ui.notifications.error("Please select a token first");
                 return;
             }
-
+            
             new Dialog({
-                title: "Configure Spelljammer Shop",
+                title: "Configure Shop",
                 content: `
                     <div class="form-group">
-                        <label>Shop Type:</label>
-                        <select id="shop-type">
-                            <option value="general">General Store</option>
-                            <option value="shipwright">Shipwright</option>
-                            <option value="components">Ship Components</option>
-                            <option value="tavern">Tavern</option>
-                            <option value="blacksmith">Blacksmith</option>
-                            <option value="gunsmith">Gunsmith</option>
-                            <option value="arcane">Arcane Shop</option>
-                            <option value="potions">Potion Shop</option>
-                            <option value="custom">Custom</option>
+                        <label>Select Shop Interior Scene:</label>
+                        <select id="scene-select">
+                            ${game.scenes.map(scene => 
+                                `<option value="${scene.id}">${scene.name}</option>`
+                            ).join('')}
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>Location:</label>
-                        <input type="text" id="shop-location">
+                        <label>Merchant Position:</label>
+                        <div>
+                            <label>X: <input type="number" id="merchant-x" value="0"/></label>
+                            <label>Y: <input type="number" id="merchant-y" value="0"/></label>
+                        </div>
                     </div>
-                    <div class="form-group services-config">
-                        <label>Available Services:</label>
-                        <div class="service-list">
-                            <!-- Ship Services -->
-                            <div class="service-entry ship-service">
-                                <input type="checkbox" id="service-repairs" value="repairs">
-                                <label for="service-repairs">Ship Repairs</label>
-                                <input type="number" class="service-cost" data-service="repairs" value="100">
-                                <span>gp</span>
-                            </div>
-                            <div class="service-entry ship-service">
-                                <input type="checkbox" id="service-helm" value="helm">
-                                <label for="service-helm">Helm Installation</label>
-                                <input type="number" class="service-cost" data-service="helm" value="500">
-                                <span>gp</span>
-                            </div>
-                            
-                            <!-- Crew Services -->
-                            <div class="service-entry crew-service">
-                                <input type="checkbox" id="service-crew" value="crew">
-                                <label for="service-crew">Crew Hiring</label>
-                                <input type="number" class="service-cost" data-service="crew" value="2">
-                                <span>gp/day</span>
-                            </div>
-                            
-                            <!-- Equipment Services -->
-                            <div class="service-entry equipment-service">
-                                <input type="checkbox" id="service-weapon-repair" value="weapon-repair">
-                                <label for="service-weapon-repair">Weapon Repair</label>
-                                <input type="number" class="service-cost" data-service="weapon-repair" value="10">
-                                <span>gp</span>
-                            </div>
-                            <div class="service-entry equipment-service">
-                                <input type="checkbox" id="service-armor-repair" value="armor-repair">
-                                <label for="service-armor-repair">Armor Repair</label>
-                                <input type="number" class="service-cost" data-service="armor-repair" value="15">
-                                <span>gp</span>
-                            </div>
-                            
-                            <!-- Gunsmith Services -->
-                            <div class="service-entry gunsmith-service">
-                                <input type="checkbox" id="service-firearm-repair" value="firearm-repair">
-                                <label for="service-firearm-repair">Firearm Repair</label>
-                                <input type="number" class="service-cost" data-service="firearm-repair" value="25">
-                                <span>gp</span>
-                            </div>
-                            <div class="service-entry gunsmith-service">
-                                <input type="checkbox" id="service-ammo-crafting" value="ammo-crafting">
-                                <label for="service-ammo-crafting">Ammunition Crafting</label>
-                                <input type="number" class="service-cost" data-service="ammo-crafting" value="5">
-                                <span>gp</span>
-                            </div>
-                            
-                            <!-- Arcane Services -->
-                            <div class="service-entry arcane-service">
-                                <input type="checkbox" id="service-identify" value="identify">
-                                <label for="service-identify">Identify Item</label>
-                                <input type="number" class="service-cost" data-service="identify" value="100">
-                                <span>gp</span>
-                            </div>
-                            <div class="service-entry arcane-service">
-                                <input type="checkbox" id="service-enchant" value="enchant">
-                                <label for="service-enchant">Enchanting Service</label>
-                                <input type="number" class="service-cost" data-service="enchant" value="500">
-                                <span>gp</span>
-                            </div>
-                            
-                            <!-- Potion Services -->
-                            <div class="service-entry potion-service">
-                                <input type="checkbox" id="service-brew" value="brew">
-                                <label for="service-brew">Custom Potion Brewing</label>
-                                <input type="number" class="service-cost" data-service="brew" value="50">
-                                <span>gp</span>
-                            </div>
-                            <div class="service-entry potion-service">
-                                <input type="checkbox" id="service-analyze" value="analyze">
-                                <label for="service-analyze">Potion Analysis</label>
-                                <input type="number" class="service-cost" data-service="analyze" value="25">
-                                <span>gp</span>
-                            </div>
-                            
-                            <button type="button" id="add-custom-service">+ Add Custom Service</button>
+                    <div class="form-group">
+                        <label>Shop Entrance Position:</label>
+                        <div>
+                            <label>X: <input type="number" id="entrance-x" value="0"/></label>
+                            <label>Y: <input type="number" id="entrance-y" value="0"/></label>
                         </div>
                     </div>
                 `,
                 buttons: {
-                    save: {
+                    link: {
                         label: "Save Configuration",
                         callback: async (html) => {
-                            const services = [];
-                            html.find('.service-entry').each((i, el) => {
-                                const $el = $(el);
-                                if ($el.find('input[type="checkbox"]').prop('checked')) {
-                                    services.push({
-                                        name: $el.find('label').text(),
-                                        type: $el.find('input[type="checkbox"]').val(),
-                                        cost: parseInt($el.find('.service-cost').val())
-                                    });
-                                }
+                            const selectedToken = canvas.tokens.controlled[0];
+                            if (!selectedToken) {
+                                ui.notifications.error("Please select a token first");
+                                return;
+                            }
+                            
+                            const sceneId = html.find('#scene-select').val();
+                            const merchantX = Number(html.find('#merchant-x').val());
+                            const merchantY = Number(html.find('#merchant-y').val());
+                            const entranceX = Number(html.find('#entrance-x').val());
+                            const entranceY = Number(html.find('#entrance-y').val());
+                            
+                            await selectedToken.document.setFlag('spelljammer-shops', 'isShop', true);
+                            await selectedToken.document.setFlag('spelljammer-shops', 'linkedScene', sceneId);
+                            await selectedToken.document.setFlag('spelljammer-shops', 'merchantPosition', {
+                                x: merchantX,
+                                y: merchantY
+                            });
+                            await selectedToken.document.setFlag('spelljammer-shops', 'entrancePosition', {
+                                x: entranceX,
+                                y: entranceY
                             });
                             
-                            await token.document.setFlag('spelljammer-shop', 'isShop', true);
-                            await token.document.setFlag('spelljammer-shop', 'shopData', {
-                                type: html.find('#shop-type').val(),
-                                location: html.find('#shop-location').val(),
-                                services
+                            await selectedToken.document.setFlag('spelljammer-shops', 'merchantData', {
+                                name: `${selectedToken.name}'s Merchant`,
+                                img: 'icons/svg/mystery-man.svg',
+                                width: 1,
+                                height: 1
                             });
                             
-                            canvas.spelljammerShop.draw();
+                            canvas.shops.draw();
                         }
                     }
-                },
-                render: (html) => {
-                    // Add shop type change handler
-                    html.find('#shop-type').change(event => {
-                        const type = event.currentTarget.value;
-                        const serviceChecks = html.find('.service-list input[type="checkbox"]');
-                        
-                        // Reset all
-                        serviceChecks.prop('checked', false);
-                        
-                        // Hide all service categories
-                        html.find('.ship-service, .crew-service, .equipment-service, .gunsmith-service, .arcane-service, .potion-service')
-                            .hide();
-                        
-                        // Show and set defaults based on type
-                        switch(type) {
-                            case 'shipwright':
-                                html.find('.ship-service').show();
-                                html.find('#service-repairs, #service-helm').prop('checked', true);
-                                break;
-                            case 'components':
-                                html.find('.ship-service').show();
-                                break;
-                            case 'tavern':
-                                html.find('.crew-service').show();
-                                html.find('#service-crew').prop('checked', true);
-                                break;
-                            case 'blacksmith':
-                                html.find('.equipment-service').show();
-                                html.find('#service-weapon-repair, #service-armor-repair').prop('checked', true);
-                                break;
-                            case 'gunsmith':
-                                html.find('.gunsmith-service').show();
-                                html.find('#service-firearm-repair, #service-ammo-crafting').prop('checked', true);
-                                break;
-                            case 'arcane':
-                                html.find('.arcane-service').show();
-                                html.find('#service-identify, #service-enchant').prop('checked', true);
-                                break;
-                            case 'potions':
-                                html.find('.potion-service').show();
-                                html.find('#service-brew, #service-analyze').prop('checked', true);
-                                break;
-                            case 'general':
-                                html.find('.equipment-service').show();
-                                break;
-                            case 'custom':
-                                html.find('.ship-service, .crew-service, .equipment-service, .gunsmith-service, .arcane-service, .potion-service')
-                                    .show();
-                                break;
-                        }
-                    });
-
-                    // Add custom service handler
-                    html.find('#add-custom-service').click(() => {
-                        const serviceList = html.find('.service-list');
-                        const newService = $(`
-                            <div class="service-entry custom">
-                                <input type="checkbox" checked>
-                                <input type="text" class="service-name" placeholder="Service Name">
-                                <input type="number" class="service-cost" value="0">
-                                <span>gp</span>
-                                <button type="button" class="remove-service">×</button>
-                            </div>
-                        `);
-                        serviceList.append(newService);
-                    });
                 }
             }).render(true);
         }
     });
+});
+
+Hooks.on('renderSceneNavigation', (app, html) => {
+    const townSceneId = game.settings.get('spelljammer-shops', 'lastTownScene');
+    if (townSceneId && canvas.scene.id !== townSceneId) {
+        const button = $(`
+            <li class="scene-control" title="Return to Town">
+                <i class="fas fa-map"></i>
+            </li>
+        `);
+        button.click(async () => {
+            const scene = game.scenes.get(townSceneId);
+            const lastEntrance = game.settings.get('spelljammer-shops', 'lastShopEntrance');
+            if (scene) {
+                await scene.view();
+                if (lastEntrance) {
+                    for (let token of canvas.tokens.controlled) {
+                        await token.document.update({
+                            x: lastEntrance.x,
+                            y: lastEntrance.y
+                        });
+                    }
+                }
+            }
+        });
+        html.append(button);
+    }
 });
