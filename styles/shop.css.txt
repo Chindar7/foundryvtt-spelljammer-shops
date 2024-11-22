@@ -1,0 +1,145 @@
+/* shop.css */
+.shop-info {
+    background: #2c3338;
+    padding: 10px;
+    margin-bottom: 10px;
+    border-radius: 5px;
+}
+
+.service-entry {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 5px;
+}
+
+.service-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.service-list table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.service-list th, 
+.service-list td {
+    padding: 5px;
+    border: 1px solid #ccc;
+    text-align: left;
+}
+
+.service-cost {
+    width: 80px;
+}
+
+.remove-service {
+    padding: 2px 8px;
+    color: red;
+}
+
+#add-custom-service {
+    margin-top: 10px;
+}
+
+.ship-service,
+.crew-service,
+.equipment-service,
+.gunsmith-service,
+.arcane-service,
+.potion-service {
+    margin-bottom: 10px;
+}
+
+.custom {
+    background: rgba(0,0,0,0.1);
+    padding: 5px;
+    border-radius: 3px;
+}
+
+.form-group {
+    margin-bottom: 15px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+
+.services-config {
+    border: 1px solid #4a545c;
+    padding: 10px;
+    border-radius: 5px;
+}
+
+.inventory-list, 
+.services-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.inventory-list table, 
+.services-list table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.inventory-list th, 
+.inventory-list td,
+.services-list th, 
+.services-list td {
+    padding: 5px;
+    border: 1px solid #ccc;
+    text-align: left;
+}
+
+.services-list label {
+    display: block;
+    margin: 5px 0;
+}
+
+.currency-inputs {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 5px;
+    margin-top: 5px;
+}
+
+.service-entry button {
+    background: #4a545c;
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.service-entry button:hover {
+    background: #5a646c;
+}
+
+.purchase-service {
+    background: #4CAF50;
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.purchase-service:hover {
+    background: #45a049;
+}
+
+input[type="text"],
+input[type="number"],
+select {
+    padding: 5px;
+    border: 1px solid #4a545c;
+    border-radius: 3px;
+    background: #2c3338;
+    color: #eee;
+}
