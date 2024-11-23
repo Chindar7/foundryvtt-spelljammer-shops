@@ -100,66 +100,39 @@ Hooks.on('getSceneControlButtons', (controls) => {
     });
 });
 
-// Handle shop token clicks
-Hooks.on('ready', () => {
-    // Set up token click listener
-    Hooks.on('controlToken', async (token) => {
+// Handle shop interactions
+class ShopInteraction {
+    static async enterShop(token) {
         if (!token.document?.getFlag('spelljammer-shops', 'isShop')) return;
         
         const linkedSceneId = token.document.getFlag('spelljammer-shops', 'linkedScene');
         const scene = game.scenes.get(linkedSceneId);
         
         if (!scene) return;
-        
-        // Store current scene as town scene
-        await game.settings.set('spelljammer-shops', 'lastTownScene', canvas.scene.id);
-        
-        // Store entrance position
-        const entrancePos = token.document.getFlag('spelljammer-shops', 'entrancePosition');
-        await game.settings.set('spelljammer-shops', 'lastShopEntrance', entrancePos);
-        
-        // View the shop scene
-        await scene.view();
-        
-        // Teleport players to entrance
-        if (entrancePos) {
-            for (let playerToken of canvas.tokens.controlled) {
-                await playerToken.document.update({
-                    x: entrancePos.x,
-                    y: entrancePos.y
-                });
-            }
-        }
-        
-        // Spawn merchant if needed
-        const merchantPos = token.document.getFlag('spelljammer-shops', 'merchantPosition');
-        const merchantData = token.document.getFlag('spelljammer-shops', 'merchantData');
-        
-        if (merchantPos && merchantData) {
-            await scene.createEmbeddedDocuments('Token', [{
-                ...merchantData,
-                x: merchantPos.x,
-                y: merchantPos.y,
-                flags: {
-                    'spelljammer-shops': {
-                        isMerchant: true
+
+        // Show confirmation dialog for players, auto-enter for GM
+        if (!game.user.isGM) {
+            new Dialog({
+                title: "Enter Shop",
+                content: `<p>Would you like to enter ${token.name}?</p>`,
+                buttons: {
+                    enter: {
+                        icon: '<i class="fas fa-door-open"></i>',
+                        label: "Enter Shop",
+                        callback: async () => await this._processShopEntry(token, scene)
+                    },
+                    cancel: {
+                        icon: '<i class="fas fa-times"></i>',
+                        label: "Cancel"
                     }
                 }
-            }]);
+            }).render(true);
+        } else {
+            await this._processShopEntry(token, scene);
         }
-    });
-});
+    }
 
-// Add double-click handling for additional reliability
-Hooks.on('ready', () => {
-    Hooks.on('clickToken', async (token) => {
-        if (!token.document?.getFlag('spelljammer-shops', 'isShop')) return;
-        
-        const linkedSceneId = token.document.getFlag('spelljammer-shops', 'linkedScene');
-        const scene = game.scenes.get(linkedSceneId);
-        
-        if (!scene) return;
-        
+    static async _processShopEntry(token, scene) {
         // Store current scene as town scene
         await game.settings.set('spelljammer-shops', 'lastTownScene', canvas.scene.id);
         
@@ -178,6 +151,46 @@ Hooks.on('ready', () => {
                     y: entrancePos.y
                 });
             }
+        }
+        
+        // Spawn merchant if needed (GM only)
+        if (game.user.isGM) {
+            const merchantPos = token.document.getFlag('spelljammer-shops', 'merchantPosition');
+            const merchantData = token.document.getFlag('spelljammer-shops', 'merchantData');
+            
+            // Check if merchant already exists
+            const existingMerchant = scene.tokens.find(t => 
+                t.getFlag('spelljammer-shops', 'isMerchant'));
+            
+            if (!existingMerchant && merchantPos && merchantData) {
+                await scene.createEmbeddedDocuments('Token', [{
+                    ...merchantData,
+                    x: merchantPos.x,
+                    y: merchantPos.y,
+                    flags: {
+                        'spelljammer-shops': {
+                            isMerchant: true
+                        }
+                    }
+                }]);
+            }
+        }
+    }
+}
+
+// Event Listeners
+Hooks.on('ready', () => {
+    // Handle token clicks
+    Hooks.on('controlToken', (token) => {
+        if (token.document?.getFlag('spelljammer-shops', 'isShop')) {
+            ShopInteraction.enterShop(token);
+        }
+    });
+
+    // Add double-click handling for additional reliability
+    Hooks.on('clickToken', (token) => {
+        if (token.document?.getFlag('spelljammer-shops', 'isShop')) {
+            ShopInteraction.enterShop(token);
         }
     });
 });
@@ -192,19 +205,35 @@ Hooks.on('renderSceneNavigation', (app, html) => {
             </li>
         `);
         button.click(async () => {
-            const scene = game.scenes.get(townSceneId);
-            const lastEntrance = game.settings.get('spelljammer-shops', 'lastShopEntrance');
-            if (scene) {
-                await scene.view();
-                if (lastEntrance) {
-                    for (let token of canvas.tokens.controlled) {
-                        await token.document.update({
-                            x: lastEntrance.x,
-                            y: lastEntrance.y
-                        });
+            new Dialog({
+                title: "Return to Town",
+                content: `<p>Would you like to return to town?</p>`,
+                buttons: {
+                    return: {
+                        icon: '<i class="fas fa-map"></i>',
+                        label: "Return",
+                        callback: async () => {
+                            const scene = game.scenes.get(townSceneId);
+                            const lastEntrance = game.settings.get('spelljammer-shops', 'lastShopEntrance');
+                            if (scene) {
+                                await scene.view();
+                                if (lastEntrance) {
+                                    for (let token of canvas.tokens.controlled) {
+                                        await token.document.update({
+                                            x: lastEntrance.x,
+                                            y: lastEntrance.y
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    cancel: {
+                        icon: '<i class="fas fa-times"></i>',
+                        label: "Cancel"
                     }
                 }
-            }
+            }).render(true);
         });
         html.append(button);
     }
