@@ -118,19 +118,12 @@ Hooks.on('canvasInit', () => {
 });
 
 Hooks.on('getSceneControlButtons', (controls) => {
-    console.log("Shop module hook running", controls);
-    controls.find(c => c.name === "tokens")?.tools.push({
+    controls.find(c => c.name === "token")?.tools.push({
         name: "linkShop",
         title: "Configure Shop",
         icon: "fas fa-store",
         visible: game.user.isGM,
         onClick: () => {
-            const token = canvas.tokens.controlled[0];
-            if (!token) {
-                ui.notifications.error("Please select a token first");
-                return;
-            }
-            
             new Dialog({
                 title: "Configure Shop",
                 content: `
@@ -190,8 +183,6 @@ Hooks.on('getSceneControlButtons', (controls) => {
                                 width: 1,
                                 height: 1
                             });
-                            
-                            canvas.shops.draw();
                         }
                     }
                 }
