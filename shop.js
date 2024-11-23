@@ -6,8 +6,23 @@ Hooks.once('init', () => {
         type: Object,
         default: {}
     });
-});
+    
+    game.settings.register('spelljammer-shops', 'lastTownScene', {
+        name: 'Last Town Scene',
+        scope: 'world',
+        config: false,
+        type: String,
+        default: ""
+    });
 
+    game.settings.register('spelljammer-shops', 'lastShopEntrance', {
+        name: 'Last Shop Entrance',
+        scope: 'world',
+        config: false,
+        type: Object,
+        default: {}
+    });
+});
 class ShopLayer extends CanvasLayer {
     constructor() {
         super();
