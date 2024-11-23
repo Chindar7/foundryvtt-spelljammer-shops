@@ -1,3 +1,4 @@
+// Register module settings
 Hooks.once('init', () => {
     game.settings.register('spelljammer-shops', 'shopScenes', {
         name: 'Shop Scene Mappings',
@@ -23,100 +24,8 @@ Hooks.once('init', () => {
         default: {}
     });
 });
-class ShopLayer extends CanvasLayer {
-    constructor() {
-        super();
-        this.shopIcons = new PIXI.Container();
-        this.addChild(this.shopIcons);
-    }
 
-    async draw() {
-        this.shopIcons.removeChildren();
-        const shopScenes = game.settings.get('spelljammer-shops', 'shopScenes');
-        
-        const shops = canvas.tokens.placeables.filter(token => 
-            token.document.getFlag('spelljammer-shops', 'isShop'));
-        
-        for (let shop of shops) {
-            const icon = await this._createShopIcon(shop);
-            this.shopIcons.addChild(icon);
-        }
-        
-        return this;
-    }
-
-    async _createShopIcon(shop) {
-        const sprite = new PIXI.Sprite.from('modules/spelljammer-shops/icons/shop.png');
-        sprite.position.set(shop.x, shop.y);
-        sprite.width = shop.width;
-        sprite.height = shop.height;
-        sprite.interactive = true;
-        sprite.buttonMode = true;
-        
-        sprite.on('click', async () => {
-            const linkedSceneId = shop.document.getFlag('spelljammer-shops', 'linkedScene');
-            if (linkedSceneId) {
-                const scene = game.scenes.get(linkedSceneId);
-                if (scene) {
-                    await game.settings.set('spelljammer-shops', 'lastTownScene', canvas.scene.id);
-                    
-                    await game.settings.set('spelljammer-shops', 'lastShopEntrance', 
-                        shop.document.getFlag('spelljammer-shops', 'entrancePosition'));
-                    
-                    await scene.view();
-                    
-                    const entrancePos = shop.document.getFlag('spelljammer-shops', 'entrancePosition');
-                    if (entrancePos) {
-                        await this._teleportPlayersToEntrance(entrancePos);
-                    }
-                    
-                    const merchantPos = shop.document.getFlag('spelljammer-shops', 'merchantPosition');
-                    if (merchantPos) {
-                        await this._spawnMerchantToken(scene, merchantPos, shop);
-                    }
-                }
-            }
-        });
-        
-        return sprite;
-    }
-
-    async _teleportPlayersToEntrance(entrancePos) {
-        for (let token of canvas.tokens.controlled) {
-            await token.document.update({
-                x: entrancePos.x,
-                y: entrancePos.y
-            });
-        }
-    }
-
-    async _spawnMerchantToken(scene, position, shopToken) {
-        const existingMerchant = scene.tokens.find(t => 
-            t.getFlag('spelljammer-shops', 'isMerchant'));
-        
-        if (!existingMerchant) {
-            const merchantData = shopToken.document.getFlag('spelljammer-shops', 'merchantData');
-            if (merchantData) {
-                await scene.createEmbeddedDocuments('Token', [{
-                    ...merchantData,
-                    x: position.x,
-                    y: position.y,
-                    flags: {
-                        'spelljammer-shops': {
-                            isMerchant: true
-                        }
-                    }
-                }]);
-            }
-        }
-    }
-}
-
-Hooks.on('canvasInit', () => {
-    const canvas = game.canvas;
-    canvas.shops = canvas.addLayer(new ShopLayer());
-});
-
+// Add Configure Shop button to token controls
 Hooks.on('getSceneControlButtons', (controls) => {
     controls.find(c => c.name === "token")?.tools.push({
         name: "linkShop",
@@ -191,6 +100,89 @@ Hooks.on('getSceneControlButtons', (controls) => {
     });
 });
 
+// Handle shop token clicks
+Hooks.on('ready', () => {
+    // Set up token click listener
+    Hooks.on('controlToken', async (token) => {
+        if (!token.document?.getFlag('spelljammer-shops', 'isShop')) return;
+        
+        const linkedSceneId = token.document.getFlag('spelljammer-shops', 'linkedScene');
+        const scene = game.scenes.get(linkedSceneId);
+        
+        if (!scene) return;
+        
+        // Store current scene as town scene
+        await game.settings.set('spelljammer-shops', 'lastTownScene', canvas.scene.id);
+        
+        // Store entrance position
+        const entrancePos = token.document.getFlag('spelljammer-shops', 'entrancePosition');
+        await game.settings.set('spelljammer-shops', 'lastShopEntrance', entrancePos);
+        
+        // View the shop scene
+        await scene.view();
+        
+        // Teleport players to entrance
+        if (entrancePos) {
+            for (let playerToken of canvas.tokens.controlled) {
+                await playerToken.document.update({
+                    x: entrancePos.x,
+                    y: entrancePos.y
+                });
+            }
+        }
+        
+        // Spawn merchant if needed
+        const merchantPos = token.document.getFlag('spelljammer-shops', 'merchantPosition');
+        const merchantData = token.document.getFlag('spelljammer-shops', 'merchantData');
+        
+        if (merchantPos && merchantData) {
+            await scene.createEmbeddedDocuments('Token', [{
+                ...merchantData,
+                x: merchantPos.x,
+                y: merchantPos.y,
+                flags: {
+                    'spelljammer-shops': {
+                        isMerchant: true
+                    }
+                }
+            }]);
+        }
+    });
+});
+
+// Add double-click handling for additional reliability
+Hooks.on('ready', () => {
+    Hooks.on('clickToken', async (token) => {
+        if (!token.document?.getFlag('spelljammer-shops', 'isShop')) return;
+        
+        const linkedSceneId = token.document.getFlag('spelljammer-shops', 'linkedScene');
+        const scene = game.scenes.get(linkedSceneId);
+        
+        if (!scene) return;
+        
+        // Store current scene as town scene
+        await game.settings.set('spelljammer-shops', 'lastTownScene', canvas.scene.id);
+        
+        // Store entrance position
+        const entrancePos = token.document.getFlag('spelljammer-shops', 'entrancePosition');
+        await game.settings.set('spelljammer-shops', 'lastShopEntrance', entrancePos);
+        
+        // View the shop scene
+        await scene.view();
+        
+        // Teleport players to entrance
+        if (entrancePos) {
+            for (let playerToken of canvas.tokens.controlled) {
+                await playerToken.document.update({
+                    x: entrancePos.x,
+                    y: entrancePos.y
+                });
+            }
+        }
+    });
+});
+
+// Add Return to Town button
 Hooks.on('renderSceneNavigation', (app, html) => {
     const townSceneId = game.settings.get('spelljammer-shops', 'lastTownScene');
     if (townSceneId && canvas.scene.id !== townSceneId) {
@@ -216,4 +208,28 @@ Hooks.on('renderSceneNavigation', (app, html) => {
         });
         html.append(button);
     }
+});
+
+// Add visual feedback for shop tokens
+Hooks.on('renderToken', (app, html, data) => {
+    if (app.document?.getFlag('spelljammer-shops', 'isShop')) {
+        html.addClass('shop-token');
+    }
+});
+
+// Add CSS
+Hooks.once('ready', () => {
+    const style = document.createElement('style');
+    style.textContent = `
+        .shop-token {
+            cursor: pointer;
+        }
+        .shop-token:hover {
+            box-shadow: 0 0 10px #ff6400;
+        }
+        .shop-token.active {
+            box-shadow: 0 0 20px #ff6400;
+        }
+    `;
+    document.head.appendChild(style);
 });
