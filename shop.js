@@ -180,21 +180,101 @@ class ShopInteraction {
 
 // Event Listeners
 Hooks.on('ready', () => {
-    // Handle token clicks
-    Hooks.on('controlToken', (token) => {
+    // Create a click handler for tokens
+    let _onClickToken = async function(token, event) {
+        // Only proceed if it's a shop token
+        if (!token.document?.getFlag('spelljammer-shops', 'isShop')) return;
+
+        // Prevent the default token selection behavior
+        event.stopPropagation();
+        
+        const linkedSceneId = token.document.getFlag('spelljammer-shops', 'linkedScene');
+        const scene = game.scenes.get(linkedSceneId);
+        
+        if (!scene) return;
+
+        // Show confirmation dialog for players, auto-enter for GM
+        if (!game.user.isGM) {
+            new Dialog({
+                title: "Enter Shop",
+                content: `<p>Would you like to enter ${token.name}?</p>`,
+                buttons: {
+                    enter: {
+                        icon: '<i class="fas fa-door-open"></i>',
+                        label: "Enter Shop",
+                        callback: async () => {
+                            await game.settings.set('spelljammer-shops', 'lastTownScene', canvas.scene.id);
+                            const entrancePos = token.document.getFlag('spelljammer-shops', 'entrancePosition');
+                            await game.settings.set('spelljammer-shops', 'lastShopEntrance', entrancePos);
+                            await scene.view();
+                            if (entrancePos) {
+                                for (let playerToken of canvas.tokens.controlled) {
+                                    await playerToken.document.update({
+                                        x: entrancePos.x,
+                                        y: entrancePos.y
+                                    });
+                                }
+                            }
+                        }
+                    },
+                    cancel: {
+                        icon: '<i class="fas fa-times"></i>',
+                        label: "Cancel"
+                    }
+                }
+            }).render(true);
+        } else {
+            // For GM: Store scene and entrance, then transition
+            await game.settings.set('spelljammer-shops', 'lastTownScene', canvas.scene.id);
+            const entrancePos = token.document.getFlag('spelljammer-shops', 'entrancePosition');
+            await game.settings.set('spelljammer-shops', 'lastShopEntrance', entrancePos);
+            await scene.view();
+            if (entrancePos) {
+                for (let playerToken of canvas.tokens.controlled) {
+                    await playerToken.document.update({
+                        x: entrancePos.x,
+                        y: entrancePos.y
+                    });
+                }
+            }
+
+            // Spawn merchant if needed (GM only)
+            const merchantPos = token.document.getFlag('spelljammer-shops', 'merchantPosition');
+            const merchantData = token.document.getFlag('spelljammer-shops', 'merchantData');
+            
+            // Check if merchant already exists
+            const existingMerchant = scene.tokens.find(t => 
+                t.getFlag('spelljammer-shops', 'isMerchant'));
+            
+            if (!existingMerchant && merchantPos && merchantData) {
+                await scene.createEmbeddedDocuments('Token', [{
+                    ...merchantData,
+                    x: merchantPos.x,
+                    y: merchantPos.y,
+                    flags: {
+                        'spelljammer-shops': {
+                            isMerchant: true
+                        }
+                    }
+                }]);
+            }
+        }
+    };
+
+    // Handle left-click on token
+    Hooks.on('clickLeft', (token, event) => {
         if (token.document?.getFlag('spelljammer-shops', 'isShop')) {
-            ShopInteraction.enterShop(token);
+            _onClickToken(token, event);
         }
     });
 
-    // Add double-click handling for additional reliability
-    Hooks.on('clickToken', (token) => {
+    // Handle right-click on token
+    Hooks.on('clickRight', (token, event) => {
         if (token.document?.getFlag('spelljammer-shops', 'isShop')) {
-            ShopInteraction.enterShop(token);
+            _onClickToken(token, event);
         }
     });
 });
-
 // Add Return to Town button
 Hooks.on('renderSceneNavigation', (app, html) => {
     const townSceneId = game.settings.get('spelljammer-shops', 'lastTownScene');
